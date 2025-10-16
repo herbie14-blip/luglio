@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Consegne - Luglio</title>
+    <!-- Includiamo la libreria PapaParse per leggere i file CSV -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <!-- Includiamo la libreria Chart.js per i grafici -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Stile generale del corpo della pagina */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        /* Contenitore principale dell'applicazione */
+        #app-container {
+            width: 100%;
+            max-width: 1200px;
+            background-color: #fff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            box-sizing: border-box;
+        }
+
+        /* Stile dell'intestazione */
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 20px;
+        }
+
+        .header h1 {
+            color: #1a237e;
+            margin: 0;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            color: #555;
+        }
+
+        /* Sezione per il caricamento del file */
+        .upload-section {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            background-color: #fafafa;
+            margin-bottom: 30px;
+        }
+
+        .upload-section label {
+            font-weight: bold;
+            font-size: 1.2em;
+            cursor: pointer;
+            background-color: #1a237e;
+            color: white;
+            padding: 12px 25px;
+            border-radius: 8px;
+            transition: background-color 0.3s ease;
+        }
+        
+        .upload-section label:hover {
+            background-color: #283593;
+        }
+
+        #csvFileInput {
+            display: none; /* Nascondiamo l'input file di default */
+        }
+
+        #fileName {
+            margin-top: 15px;
+            font-style: italic;
+            color: #666;
+        }
+
+        /* Contenitore per le schede con le metriche */
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            text-align: center;
+            margin-bottom: 40px; /* Aggiunto spazio per separare dai grafici */
+        }
+
+        /* Stile delle singole schede */
+        .stat-card {
+            background-color: #ffffff;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            border-left: 5px solid;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+        }
+
+        .stat-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 1.1em;
+            color: #666;
+        }
+
+        .stat-card p {
+            margin: 0;
+            font-size: 2.2em;
+            font-weight: bold;
+        }
+        
+        /* Colori specifici per le schede */
+        #total-deliveries { border-color: #42a5f5; color: #42a5f5; } /* Blu */
+        #total-value { border-color: #66bb6a; color: #66bb6a; }     /* Verde */
+        #unique-clients { border-color: #ffa726; color: #ffa726; }  /* Arancione */
+        #unique-agents { border-color: #ef5350; color: #ef5350; }   /* Rosso */
+
+        /* NUOVO: Stile per la card di analisi Gemini */
+        #gemini-analysis-card {
+            grid-column: 1 / -1; /* Occupa tutta la larghezza */
+            border-color: #7e57c2; /* Viola */
+            min-height: 120px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #gemini-analysis-card button {
+            background-color: #7e57c2;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 1em;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        #gemini-analysis-card button:hover {
+            background-color: #673ab7;
+        }
+        
+        #gemini-result {
+            font-size: 1em;
+            color: #333;
+            text-align: left;
+            line-height: 1.6;
+            font-weight: normal;
+        }
+        
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #FFF;
+            border-bottom-color: #7e57c2;
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+
+        /* Contenitore dei grafici aggiornato */
+        .charts-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 30px;
+        }
+
+        .chart-card {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+        
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        <header class="header">
+            <h1>Dashboard Riepilogo Consegne</h1>
+            <p>Carica il tuo file CSV per visualizzare i dati di Luglio</p>
+        </header>
+
+        <section class="upload-section">
+            <label for="csvFileInput">Carica File CSV</label>
+            <input type="file" id="csvFileInput" accept=".csv">
+            <p id="fileName">Nessun file selezionato</p>
+        </section>
+
+        <main>
+            <section class="stats-container">
+                <div class="stat-card" id="total-deliveries">
+                    <h3>Totale Consegne</h3>
+                    <p>0</p>
+                </div>
+                <div class="stat-card" id="total-value">
+                    <h3>Valore Totale Merce</h3>
+                    <p>€ 0,00</p>
+                </div>
+                <div class="stat-card" id="unique-clients">
+                    <h3>Clienti Unici</h3>
+                    <p>0</p>
+                </div>
+                <div class="stat-card" id="unique-agents">
+                    <h3>Agenti Unici</h3>
+                    <p>0</p>
+                </div>
+                <!-- NUOVO: Card per l'analisi con Gemini -->
+                <div class="stat-card" id="gemini-analysis-card" style="display: none;">
+                    <button id="generate-analysis-btn">✨ Genera Analisi Intelligente</button>
+                    <div id="gemini-content"></div>
+                </div>
+            </section>
+            
+            <section class="charts-container">
+                <div class="chart-card">
+                    <canvas id="clientsChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <canvas id="agentsChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <canvas id="carriersChart"></canvas>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // Elementi HTML
+        const fileInput = document.getElementById('csvFileInput');
+        const fileNameDisplay = document.getElementById('fileName');
+        const totalDeliveriesCard = document.querySelector('#total-deliveries p');
+        const totalValueCard = document.querySelector('#total-value p');
+        const uniqueClientsCard = document.querySelector('#unique-clients p');
+        const uniqueAgentsCard = document.querySelector('#unique-agents p');
+
+        // NUOVO: Elementi per Gemini
+        const geminiCard = document.getElementById('gemini-analysis-card');
+        const geminiButton = document.getElementById('generate-analysis-btn');
+        const geminiContent = document.getElementById('gemini-content');
+        let processedDataSummary = null; // Per conservare i dati per la chiamata API
+        
+        // Istanze dei grafici
+        let clientsChartInstance = null;
+        let agentsChartInstance = null;
+        let carriersChartInstance = null;
+
+
+        // Event Listener per il caricamento del file
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) {
+                fileNameDisplay.textContent = 'Nessun file selezionato';
+                return;
+            }
+            fileNameDisplay.textContent = `File selezionato: ${file.name}`;
+            
+            Papa.parse(file, {
+                header: false, skipEmptyLines: true,
+                complete: (results) => processData(results.data),
+                error: (error) => {
+                    console.error("Errore durante la lettura del file:", error);
+                    alert("Si è verificato un errore durante la lettura del file CSV.");
+                }
+            });
+        });
+        
+        // NUOVO: Event Listener per il pulsante Gemini
+        geminiButton.addEventListener('click', generateGeminiAnalysis);
+
+        // Elaborazione dati
+        function processData(data) {
+            const CLIENT_COL_INDEX = 7;
+            const VALUE_COL_INDEX = 17;
+            const AGENT_COL_INDEX = 57;
+            const CARRIER_COL_INDEX = 62;
+
+            let totalValue = 0;
+            const clientSales = {};
+            const agentSales = {};
+            const carrierPerformance = {};
+            
+            data.forEach(row => {
+                const client = row[CLIENT_COL_INDEX]?.trim();
+                const agent = row[AGENT_COL_INDEX]?.trim();
+                const carrier = row[CARRIER_COL_INDEX]?.trim();
+                let numericValue = 0;
+
+                const rawValue = row[VALUE_COL_INDEX];
+                if (rawValue) {
+                    const cleanedString = rawValue.toString().replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+                    numericValue = parseFloat(cleanedString);
+                    if (!isNaN(numericValue)) totalValue += numericValue;
+                    else numericValue = 0;
+                }
+                
+                if (client && numericValue > 0) clientSales[client] = (clientSales[client] || 0) + numericValue;
+                if (agent && numericValue > 0) agentSales[agent] = (agentSales[agent] || 0) + numericValue;
+                if (carrier) {
+                    if (!carrierPerformance[carrier]) carrierPerformance[carrier] = { totalValue: 0, deliveryCount: 0 };
+                    if (numericValue > 0) carrierPerformance[carrier].totalValue += numericValue;
+                    carrierPerformance[carrier].deliveryCount += 1;
+                }
+            });
+            
+            // Ordiniamo i dati per i grafici e il sommario
+            const topClients = Object.entries(clientSales).sort(([, a], [, b]) => b - a).slice(0, 3);
+            const topAgents = Object.entries(agentSales).sort(([, a], [, b]) => b - a).slice(0, 3);
+            const topCarriers = Object.entries(carrierPerformance).sort(([,a],[,b]) => b.totalValue - a.totalValue).slice(0, 3);
+
+            // Aggiorniamo le schede
+            totalDeliveriesCard.textContent = data.length.toLocaleString('it-IT');
+            totalValueCard.textContent = totalValue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+            uniqueClientsCard.textContent = Object.keys(clientSales).length.toLocaleString('it-IT');
+            uniqueAgentsCard.textContent = Object.keys(agentSales).length.toLocaleString('it-IT');
+            
+            // NUOVO: Salviamo i dati per Gemini e mostriamo la card
+            processedDataSummary = {
+                totalDeliveries: data.length,
+                totalValue,
+                topClients,
+                topAgents,
+                topCarriers
+            };
+            geminiCard.style.display = 'flex';
+            geminiButton.style.display = 'block';
+            geminiContent.innerHTML = '';
+            
+            // Renderizziamo i grafici con i primi 10
+            renderCharts(
+                Object.entries(clientSales).sort(([, a], [, b]) => b - a).slice(0, 10),
+                Object.entries(agentSales).sort(([, a], [, b]) => b - a).slice(0, 10),
+                Object.entries(carrierPerformance).sort(([,a],[,b]) => b.totalValue - a.totalValue).slice(0, 10)
+            );
+        }
+
+        // NUOVO: Funzione per chiamare l'API Gemini
+        async function generateGeminiAnalysis() {
+            if (!processedDataSummary) {
+                alert("Per favore, carica prima un file di dati.");
+                return;
+            }
+
+            geminiButton.style.display = 'none';
+            geminiContent.innerHTML = '<div class="loader"></div>';
+
+            const { totalDeliveries, totalValue, topClients, topAgents, topCarriers } = processedDataSummary;
+
+            const prompt = `Sei un analista di dati esperto. Basandoti sui seguenti dati di riepilogo per le consegne di un mese, scrivi un'analisi concisa (massimo 3-4 frasi) in italiano. Evidenzia un punto di forza chiave e suggerisci una possibile area di indagine o miglioramento.
+            Dati:
+            - Totale Consegne: ${totalDeliveries.toLocaleString('it-IT')}
+            - Valore Totale: ${totalValue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}
+            - Primi 3 Clienti: ${topClients.map(c => `${c[0]} (${c[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
+            - Primi 3 Agenti: ${topAgents.map(a => `${a[0]} (${a[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
+            - Primi 3 Vettori (per valore): ${topCarriers.map(v => `${v[0]}`).join(', ')}
+            `;
+
+            try {
+                const apiKey = ""; // Canvas fornirà la chiave API
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: prompt }] }]
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Errore API: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                const analysisText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                if (analysisText) {
+                    geminiContent.innerHTML = `<p id="gemini-result">${analysisText.replace(/\n/g, '<br>')}</p>`;
+                } else {
+                    throw new Error("Risposta dall'API non valida.");
+                }
+
+            } catch (error) {
+                console.error("Errore nella chiamata a Gemini:", error);
+                geminiContent.innerHTML = `<p id="gemini-result" style="color: red;">Spiacente, non è stato possibile generare l'analisi. Riprova.</p>`;
+                geminiButton.style.display = 'block'; // Mostra di nuovo il pulsante in caso di errore
+            }
+        }
+
+        // Funzione per creare e aggiornare i grafici
+        function renderCharts(topClients, topAgents, topCarriers) {
+            if(clientsChartInstance) clientsChartInstance.destroy();
+            if(agentsChartInstance) agentsChartInstance.destroy();
+            if(carriersChartInstance) carriersChartInstance.destroy();
+
+            // Grafico Clienti
+            const clientsCtx = document.getElementById('clientsChart').getContext('2d');
+            clientsChartInstance = new Chart(clientsCtx, {
+                type: 'bar', data: { labels: topClients.map(item => item[0]), datasets: [{ label: 'Valore Consegne (€)', data: topClients.map(item => item[1]), backgroundColor: 'rgba(66, 165, 245, 0.6)', borderColor: 'rgba(66, 165, 245, 1)', borderWidth: 1 }] },
+                options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Top 10 Clienti per Valore', font: { size: 16 } } }, scales: { y: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } } } }
+            });
+
+            // Grafico Agenti
+            const agentsCtx = document.getElementById('agentsChart').getContext('2d');
+            agentsChartInstance = new Chart(agentsCtx, {
+                type: 'bar', data: { labels: topAgents.map(item => item[0]), datasets: [{ label: 'Valore Consegne (€)', data: topAgents.map(item => item[1]), backgroundColor: 'rgba(239, 83, 80, 0.6)', borderColor: 'rgba(239, 83, 80, 1)', borderWidth: 1 }] },
+                options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Top 10 Agenti per Valore', font: { size: 16 } } }, scales: { y: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } } } }
+            });
+
+            // Grafico Vettori
+            const carriersCtx = document.getElementById('carriersChart').getContext('2d');
+            carriersChartInstance = new Chart(carriersCtx, {
+                type: 'bar', data: { labels: topCarriers.map(item => item[0]), datasets: [ { label: 'Valore Totale (€)', data: topCarriers.map(item => item[1].totalValue), backgroundColor: 'rgba(102, 187, 106, 0.6)', borderColor: 'rgba(102, 187, 106, 1)', borderWidth: 1, yAxisID: 'y' }, { label: 'Numero Consegne', data: topCarriers.map(item => item[1].deliveryCount), backgroundColor: 'rgba(255, 167, 38, 0.6)', borderColor: 'rgba(255, 167, 38, 1)', borderWidth: 1, yAxisID: 'y1' } ] },
+                options: { responsive: true, plugins: { legend: { display: true }, title: { display: true, text: 'Top 10 Vettori per Performance', font: { size: 16 } } }, scales: { y: { type: 'linear', position: 'left', beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } } } }
+            });
+        }
+    </script>
+</body>
+</html>
+
