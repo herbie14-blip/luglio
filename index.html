@@ -133,7 +133,7 @@
         #unique-clients { border-color: #ffa726; color: #ffa726; }  /* Arancione */
         #unique-agents { border-color: #ef5350; color: #ef5350; }   /* Rosso */
 
-        /* NUOVO: Stile per la card di analisi Gemini */
+        /* Stile per la card di analisi Gemini */
         #gemini-analysis-card {
             grid-column: 1 / -1; /* Occupa tutta la larghezza */
             border-color: #7e57c2; /* Viola */
@@ -231,7 +231,6 @@
                     <h3>Agenti Unici</h3>
                     <p>0</p>
                 </div>
-                <!-- NUOVO: Card per l'analisi con Gemini -->
                 <div class="stat-card" id="gemini-analysis-card" style="display: none;">
                     <button id="generate-analysis-btn">✨ Genera Analisi Intelligente</button>
                     <div id="gemini-content"></div>
@@ -261,7 +260,7 @@
         const uniqueClientsCard = document.querySelector('#unique-clients p');
         const uniqueAgentsCard = document.querySelector('#unique-agents p');
 
-        // NUOVO: Elementi per Gemini
+        // Elementi per Gemini
         const geminiCard = document.getElementById('gemini-analysis-card');
         const geminiButton = document.getElementById('generate-analysis-btn');
         const geminiContent = document.getElementById('gemini-content');
@@ -292,7 +291,6 @@
             });
         });
         
-        // NUOVO: Event Listener per il pulsante Gemini
         geminiButton.addEventListener('click', generateGeminiAnalysis);
 
         // Elaborazione dati
@@ -341,7 +339,7 @@
             uniqueClientsCard.textContent = Object.keys(clientSales).length.toLocaleString('it-IT');
             uniqueAgentsCard.textContent = Object.keys(agentSales).length.toLocaleString('it-IT');
             
-            // NUOVO: Salviamo i dati per Gemini e mostriamo la card
+            // Salviamo i dati per Gemini e mostriamo la card
             processedDataSummary = {
                 totalDeliveries: data.length,
                 totalValue,
@@ -361,7 +359,7 @@
             );
         }
 
-        // NUOVO: Funzione per chiamare l'API Gemini
+        // Funzione per chiamare l'API Gemini
         async function generateGeminiAnalysis() {
             if (!processedDataSummary) {
                 alert("Per favore, carica prima un file di dati.");
