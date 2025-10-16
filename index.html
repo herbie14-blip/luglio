@@ -137,12 +137,13 @@
         #gemini-analysis-card {
             grid-column: 1 / -1; /* Occupa tutta la larghezza */
             border-color: #7e57c2; /* Viola */
-            min-height: 120px;
-            justify-content: center;
-            align-items: center;
+            min-height: 150px;
+            align-items: flex-start;
+            padding-top: 15px;
+            padding-bottom: 15px;
         }
 
-        #gemini-analysis-card button {
+        #gemini-analysis-card button#generate-analysis-btn {
             background-color: #7e57c2;
             color: white;
             border: none;
@@ -152,29 +153,65 @@
             border-radius: 8px;
             cursor: pointer;
             transition: background-color 0.3s ease;
+            margin: auto; /* Centra il pulsante quando è da solo */
         }
 
-        #gemini-analysis-card button:hover {
+        #gemini-analysis-card button#generate-analysis-btn:hover {
             background-color: #673ab7;
         }
         
-        #gemini-result {
+        #gemini-tabs {
+            margin-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+        }
+
+        .gemini-tab-btn {
+            border: none;
+            background: none;
+            padding: 8px 16px;
+            font-size: 1em;
+            cursor: pointer;
+            border-radius: 6px;
+            margin-right: 5px;
+            transition: background-color 0.2s, color 0.2s;
+            color: #555;
+            font-weight: 500;
+        }
+
+        .gemini-tab-btn.active {
+            background-color: #ede7f6;
+            color: #5e35b1;
+        }
+        
+        #gemini-result-content {
             font-size: 1em;
             color: #333;
             text-align: left;
             line-height: 1.6;
-            font-weight: normal;
+            width: 100%;
+            min-height: 50px;
+        }
+        
+        #gemini-result-content ul {
+            padding-left: 20px;
+            margin: 0;
+        }
+
+        #gemini-result-content li {
+            margin-bottom: 8px;
         }
         
         .loader {
             width: 48px;
             height: 48px;
-            border: 5px solid #FFF;
+            border: 5px solid #ddd;
             border-bottom-color: #7e57c2;
             border-radius: 50%;
-            display: inline-block;
+            display: block;
             box-sizing: border-box;
             animation: rotation 1s linear infinite;
+            margin: 20px auto;
         }
 
         @keyframes rotation {
@@ -188,6 +225,10 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
             gap: 30px;
+        }
+        
+        .chart-card.full-width {
+            grid-column: 1 / -1; /* Occupa tutta la larghezza della griglia */
         }
 
         .chart-card {
@@ -232,12 +273,21 @@
                     <p>0</p>
                 </div>
                 <div class="stat-card" id="gemini-analysis-card" style="display: none;">
-                    <button id="generate-analysis-btn">✨ Genera Analisi Intelligente</button>
-                    <div id="gemini-content"></div>
+                    <button id="generate-analysis-btn">✨ Esegui Analisi Completa</button>
+                    <div id="gemini-content" style="width:100%; display:none;">
+                        <div id="gemini-tabs">
+                            <button class="gemini-tab-btn active" data-tab="summary">Riepilogo</button>
+                            <button class="gemini-tab-btn" data-tab="suggestions">Suggerimenti</button>
+                        </div>
+                        <div id="gemini-result-content"></div>
+                    </div>
                 </div>
             </section>
             
             <section class="charts-container">
+                <div class="chart-card full-width">
+                    <canvas id="dailyDeliveriesChart"></canvas>
+                </div>
                 <div class="chart-card">
                     <canvas id="clientsChart"></canvas>
                 </div>
@@ -246,6 +296,9 @@
                 </div>
                 <div class="chart-card">
                     <canvas id="carriersChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <canvas id="provincesChart"></canvas>
                 </div>
             </section>
         </main>
@@ -264,12 +317,18 @@
         const geminiCard = document.getElementById('gemini-analysis-card');
         const geminiButton = document.getElementById('generate-analysis-btn');
         const geminiContent = document.getElementById('gemini-content');
-        let processedDataSummary = null; // Per conservare i dati per la chiamata API
+        const geminiResultContent = document.getElementById('gemini-result-content');
+        
+        let processedDataSummary = null;
+        let geminiSummaryResult = null;
+        let geminiSuggestionsResult = null;
         
         // Istanze dei grafici
         let clientsChartInstance = null;
         let agentsChartInstance = null;
         let carriersChartInstance = null;
+        let provincesChartInstance = null;
+        let dailyDeliveriesChartInstance = null;
 
 
         // Event Listener per il caricamento del file
@@ -292,23 +351,41 @@
         });
         
         geminiButton.addEventListener('click', generateGeminiAnalysis);
+        
+        document.getElementById('gemini-tabs').addEventListener('click', (event) => {
+            if (event.target.classList.contains('gemini-tab-btn')) {
+                const tab = event.target.dataset.tab;
+                switchGeminiTab(tab);
+            }
+        });
+
 
         // Elaborazione dati
         function processData(data) {
+            const DATE_COL_INDEX = 4; // Colonna E
             const CLIENT_COL_INDEX = 7;
             const VALUE_COL_INDEX = 17;
             const AGENT_COL_INDEX = 57;
+            const PROVINCE_COL_INDEX = 55; 
             const CARRIER_COL_INDEX = 62;
 
             let totalValue = 0;
             const clientSales = {};
             const agentSales = {};
             const carrierPerformance = {};
+            const provinceDeliveries = {};
+            const dailyDeliveries = {};
+            
+            // Pulisci i dati vecchi di Gemini
+            geminiSummaryResult = null;
+            geminiSuggestionsResult = null;
             
             data.forEach(row => {
+                const dateStr = row[DATE_COL_INDEX]?.trim();
                 const client = row[CLIENT_COL_INDEX]?.trim();
                 const agent = row[AGENT_COL_INDEX]?.trim();
                 const carrier = row[CARRIER_COL_INDEX]?.trim();
+                const province = row[PROVINCE_COL_INDEX]?.trim();
                 let numericValue = 0;
 
                 const rawValue = row[VALUE_COL_INDEX];
@@ -326,99 +403,156 @@
                     if (numericValue > 0) carrierPerformance[carrier].totalValue += numericValue;
                     carrierPerformance[carrier].deliveryCount += 1;
                 }
+                if (province) provinceDeliveries[province] = (provinceDeliveries[province] || 0) + 1;
+                if (dateStr) {
+                    try {
+                        const day = parseInt(dateStr.split('/')[0], 10);
+                        if (day >= 1 && day <= 31) {
+                           dailyDeliveries[day] = (dailyDeliveries[day] || 0) + 1;
+                        }
+                    } catch (e) {}
+                }
             });
             
-            // Ordiniamo i dati per i grafici e il sommario
-            const topClients = Object.entries(clientSales).sort(([, a], [, b]) => b - a).slice(0, 3);
-            const topAgents = Object.entries(agentSales).sort(([, a], [, b]) => b - a).slice(0, 3);
-            const topCarriers = Object.entries(carrierPerformance).sort(([,a],[,b]) => b.totalValue - a.totalValue).slice(0, 3);
+            const dailyDataForChart = Array.from({ length: 31 }, (_, i) => i + 1).map(day => dailyDeliveries[day] || 0);
 
-            // Aggiorniamo le schede
+            const topClients = Object.entries(clientSales).sort(([, a], [, b]) => b - a).slice(0, 10);
+            const topAgents = Object.entries(agentSales).sort(([, a], [, b]) => b - a).slice(0, 10);
+            const topCarriers = Object.entries(carrierPerformance).sort(([,a],[,b]) => b.totalValue - a.totalValue).slice(0, 10);
+            const topProvinces = Object.entries(provinceDeliveries).sort(([,a],[,b]) => b-a).slice(0,10);
+
             totalDeliveriesCard.textContent = data.length.toLocaleString('it-IT');
             totalValueCard.textContent = totalValue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
             uniqueClientsCard.textContent = Object.keys(clientSales).length.toLocaleString('it-IT');
             uniqueAgentsCard.textContent = Object.keys(agentSales).length.toLocaleString('it-IT');
             
-            // Salviamo i dati per Gemini e mostriamo la card
             processedDataSummary = {
-                totalDeliveries: data.length,
-                totalValue,
-                topClients,
-                topAgents,
-                topCarriers
+                totalDeliveries: data.length, totalValue,
+                topClients: topClients.slice(0, 3),
+                topAgents: topAgents.slice(0, 3),
+                topCarriers: topCarriers.slice(0, 3),
+                topProvinces: topProvinces.slice(0, 3)
             };
+            
             geminiCard.style.display = 'flex';
             geminiButton.style.display = 'block';
+            geminiContent.style.display = 'none';
             geminiContent.innerHTML = '';
             
-            // Renderizziamo i grafici con i primi 10
-            renderCharts(
-                Object.entries(clientSales).sort(([, a], [, b]) => b - a).slice(0, 10),
-                Object.entries(agentSales).sort(([, a], [, b]) => b - a).slice(0, 10),
-                Object.entries(carrierPerformance).sort(([,a],[,b]) => b.totalValue - a.totalValue).slice(0, 10)
-            );
+            renderCharts(topClients, topAgents, topCarriers, topProvinces, dailyDataForChart);
         }
 
         // Funzione per chiamare l'API Gemini
+        async function callGeminiAPI(prompt) {
+            const apiKey = ""; // Canvas fornirà la chiave API
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const payload = { contents: [{ parts: [{ text: prompt }] }] };
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) throw new Error(`Errore API: ${response.status} ${response.statusText}`);
+            const result = await response.json();
+            const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) throw new Error("Risposta dall'API non valida o vuota.");
+            return text;
+        }
+
         async function generateGeminiAnalysis() {
-            if (!processedDataSummary) {
-                alert("Per favore, carica prima un file di dati.");
-                return;
-            }
+            if (!processedDataSummary) return alert("Per favore, carica prima un file di dati.");
 
             geminiButton.style.display = 'none';
+            geminiContent.style.display = 'block';
             geminiContent.innerHTML = '<div class="loader"></div>';
 
-            const { totalDeliveries, totalValue, topClients, topAgents, topCarriers } = processedDataSummary;
-
-            const prompt = `Sei un analista di dati esperto. Basandoti sui seguenti dati di riepilogo per le consegne di un mese, scrivi un'analisi concisa (massimo 3-4 frasi) in italiano. Evidenzia un punto di forza chiave e suggerisci una possibile area di indagine o miglioramento.
+            const { totalDeliveries, totalValue, topClients, topAgents, topCarriers, topProvinces } = processedDataSummary;
+            
+            const summaryPrompt = `Sei un analista di dati. Basandoti sui seguenti dati di riepilogo per le consegne di un mese, scrivi un'analisi concisa (massimo 3 frasi) in italiano. Evidenzia un punto di forza e suggerisci una possibile area di indagine.
             Dati:
             - Totale Consegne: ${totalDeliveries.toLocaleString('it-IT')}
             - Valore Totale: ${totalValue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}
-            - Primi 3 Clienti: ${topClients.map(c => `${c[0]} (${c[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
-            - Primi 3 Agenti: ${topAgents.map(a => `${a[0]} (${a[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
-            - Primi 3 Vettori (per valore): ${topCarriers.map(v => `${v[0]}`).join(', ')}
-            `;
+            - Primi 3 Clienti: ${topClients.map(c => c[0]).join(', ')}
+            - Primi 3 Agenti: ${topAgents.map(a => a[0]).join(', ')}
+            - Primi 3 Vettori (per valore): ${topCarriers.map(v => v[0]).join(', ')}
+            - Prime 3 Province: ${topProvinces.map(p => p[0]).join(', ')}`;
+            
+            const suggestionsPrompt = `Sei un consulente strategico. Basandoti sui dati di performance di un mese, fornisci 3 suggerimenti strategici concreti e attuabili in italiano. Struttura la risposta come una lista puntata (usa *).
+            Un suggerimento deve riguardare i clienti (es. fidelizzazione), uno gli agenti (es. incentivazione) e uno la logistica (es. ottimizzazione vettori o aree geografiche).
+            Dati:
+            - Valore Totale: ${totalValue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}
+            - Primi 3 Clienti per valore: ${topClients.map(c => `${c[0]} (${c[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
+            - Primi 3 Agenti per valore: ${topAgents.map(a => `${a[0]} (${a[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
+            - Primi 3 Vettori (per n. consegne): ${topCarriers.map(v => `${v[0]} (${v[1].deliveryCount} consegne)`).join(', ')}
+            - Prime 3 Province (per n. consegne): ${topProvinces.map(p => `${p[0]} (${p[1]} consegne)`).join(', ')}`;
 
             try {
-                const apiKey = ""; // Canvas fornirà la chiave API
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                // Eseguiamo entrambe le chiamate in parallelo
+                const [summary, suggestions] = await Promise.all([
+                    callGeminiAPI(summaryPrompt),
+                    callGeminiAPI(suggestionsPrompt)
+                ]);
+                geminiSummaryResult = summary;
+                geminiSuggestionsResult = suggestions.replace(/\* /g, '<li>').replace(/$/gm, '</li>').replace(/\n/g, '');
 
-                const payload = {
-                    contents: [{ parts: [{ text: prompt }] }]
-                };
-
-                const response = await fetch(apiUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`Errore API: ${response.statusText}`);
-                }
-
-                const result = await response.json();
-                const analysisText = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-                if (analysisText) {
-                    geminiContent.innerHTML = `<p id="gemini-result">${analysisText.replace(/\n/g, '<br>')}</p>`;
-                } else {
-                    throw new Error("Risposta dall'API non valida.");
-                }
+                renderGeminiUI();
+                switchGeminiTab('summary');
 
             } catch (error) {
                 console.error("Errore nella chiamata a Gemini:", error);
-                geminiContent.innerHTML = `<p id="gemini-result" style="color: red;">Spiacente, non è stato possibile generare l'analisi. Riprova.</p>`;
-                geminiButton.style.display = 'block'; // Mostra di nuovo il pulsante in caso di errore
+                geminiContent.innerHTML = `<p style="color: red; text-align:center;">Spiacente, non è stato possibile generare l'analisi. Riprova.</p>`;
+                geminiButton.style.display = 'block';
+            }
+        }
+        
+        function renderGeminiUI() {
+            geminiContent.innerHTML = `
+                <div id="gemini-tabs">
+                    <button class="gemini-tab-btn" data-tab="summary">Riepilogo</button>
+                    <button class="gemini-tab-btn" data-tab="suggestions">Suggerimenti</button>
+                </div>
+                <div id="gemini-result-content"></div>`;
+        }
+        
+        function switchGeminiTab(tab) {
+            document.querySelectorAll('.gemini-tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.gemini-tab-btn[data-tab="${tab}"]`).classList.add('active');
+            
+            const resultContent = document.getElementById('gemini-result-content');
+            if (tab === 'summary') {
+                resultContent.innerHTML = `<p>${geminiSummaryResult}</p>`;
+            } else {
+                resultContent.innerHTML = `<ul>${geminiSuggestionsResult}</ul>`;
             }
         }
 
+
         // Funzione per creare e aggiornare i grafici
-        function renderCharts(topClients, topAgents, topCarriers) {
+        function renderCharts(topClients, topAgents, topCarriers, topProvinces, dailyData) {
             if(clientsChartInstance) clientsChartInstance.destroy();
             if(agentsChartInstance) agentsChartInstance.destroy();
             if(carriersChartInstance) carriersChartInstance.destroy();
+            if(provincesChartInstance) provincesChartInstance.destroy();
+            if(dailyDeliveriesChartInstance) dailyDeliveriesChartInstance.destroy();
+
+            // Grafico Andamento Giornaliero
+            const dailyCtx = document.getElementById('dailyDeliveriesChart').getContext('2d');
+            dailyDeliveriesChartInstance = new Chart(dailyCtx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({ length: 31 }, (_, i) => i + 1), // Etichette da 1 a 31
+                    datasets: [{
+                        label: 'Numero Consegne', data: dailyData,
+                        borderColor: 'rgba(26, 35, 126, 1)', backgroundColor: 'rgba(26, 35, 126, 0.1)',
+                        fill: true, tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false }, title: { display: true, text: 'Andamento Consegne Giornaliere - Luglio', font: { size: 16 } } },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { title: { display: true, text: 'Giorno del mese' } } }
+                }
+            });
 
             // Grafico Clienti
             const clientsCtx = document.getElementById('clientsChart').getContext('2d');
@@ -439,6 +573,24 @@
             carriersChartInstance = new Chart(carriersCtx, {
                 type: 'bar', data: { labels: topCarriers.map(item => item[0]), datasets: [ { label: 'Valore Totale (€)', data: topCarriers.map(item => item[1].totalValue), backgroundColor: 'rgba(102, 187, 106, 0.6)', borderColor: 'rgba(102, 187, 106, 1)', borderWidth: 1, yAxisID: 'y' }, { label: 'Numero Consegne', data: topCarriers.map(item => item[1].deliveryCount), backgroundColor: 'rgba(255, 167, 38, 0.6)', borderColor: 'rgba(255, 167, 38, 1)', borderWidth: 1, yAxisID: 'y1' } ] },
                 options: { responsive: true, plugins: { legend: { display: true }, title: { display: true, text: 'Top 10 Vettori per Performance', font: { size: 16 } } }, scales: { y: { type: 'linear', position: 'left', beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } } } }
+            });
+
+            // Grafico Province
+            const provincesCtx = document.getElementById('provincesChart').getContext('2d');
+            provincesChartInstance = new Chart(provincesCtx, {
+                type: 'bar',
+                data: {
+                    labels: topProvinces.map(item => item[0]),
+                    datasets: [{
+                        label: 'Numero Consegne', data: topProvinces.map(item => item[1]),
+                        backgroundColor: 'rgba(126, 87, 194, 0.6)', borderColor: 'rgba(126, 87, 194, 1)', borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false }, title: { display: true, text: 'Top 10 Province per Numero Consegne', font: { size: 16 } } },
+                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+                }
             });
         }
     </script>
