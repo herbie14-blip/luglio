@@ -35,21 +35,46 @@
 
         /* Stile dell'intestazione */
         .header {
-            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-align: left;
             margin-bottom: 30px;
             border-bottom: 1px solid #e0e0e0;
             padding-bottom: 20px;
         }
 
-        .header h1 {
+        .header-text h1 {
             color: #1a237e;
             margin: 0;
         }
 
-        .header p {
+        .header-text p {
             font-size: 1.1em;
             color: #555;
+            margin: 5px 0 0 0;
         }
+        
+        #export-btn {
+            background-color: #00796b;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 0.9em;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            white-space: nowrap;
+        }
+        #export-btn:hover {
+            background-color: #004d40;
+        }
+        #export-btn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
 
         /* Sezione per il caricamento del file */
         .upload-section {
@@ -255,8 +280,11 @@
 
     <div id="app-container">
         <header class="header">
-            <h1>Dashboard Riepilogo Consegne</h1>
-            <p>Carica il tuo file CSV per visualizzare i dati di Luglio</p>
+            <div class="header-text">
+                <h1>Dashboard Riepilogo Consegne</h1>
+                <p>Carica il tuo file CSV per visualizzare i dati di Luglio</p>
+            </div>
+            <button id="export-btn" disabled>Esporta HTML</button>
         </header>
 
         <section class="upload-section">
@@ -335,6 +363,7 @@
         // Elementi HTML
         const fileInput = document.getElementById('csvFileInput');
         const fileNameDisplay = document.getElementById('fileName');
+        const exportBtn = document.getElementById('export-btn');
         const totalDeliveriesCard = document.querySelector('#total-deliveries p');
         const totalValueCard = document.querySelector('#total-value p');
         const uniqueClientsCard = document.querySelector('#unique-clients p');
@@ -360,19 +389,26 @@
             const file = event.target.files[0];
             if (!file) {
                 fileNameDisplay.textContent = 'Nessun file selezionato';
+                exportBtn.disabled = true;
                 return;
             }
             fileNameDisplay.textContent = `File selezionato: ${file.name}`;
             
             Papa.parse(file, {
                 header: false, skipEmptyLines: true,
-                complete: (results) => processData(results.data),
+                complete: (results) => {
+                    processData(results.data);
+                    exportBtn.disabled = false; // Abilita il pulsante dopo il caricamento
+                },
                 error: (error) => {
                     console.error("Errore durante la lettura del file:", error);
                     alert("Si è verificato un errore durante la lettura del file CSV.");
+                    exportBtn.disabled = true;
                 }
             });
         });
+
+        exportBtn.addEventListener('click', exportToHtml);
         
         geminiButton.addEventListener('click', generateGeminiAnalysis);
         
@@ -552,6 +588,53 @@
             } else {
                 geminiResultContent.innerHTML = geminiSuggestionsResult ? `<ul>${geminiSuggestionsResult}</ul>` : 'Nessun suggerimento disponibile.';
             }
+        }
+
+        function exportToHtml() {
+            // 1. Clona il documento per non modificare la pagina live
+            const staticDoc = document.documentElement.cloneNode(true);
+
+            // 2. Rimuovi gli elementi interattivi dal clone
+            staticDoc.querySelector('.upload-section')?.remove();
+            staticDoc.querySelector('#export-btn')?.remove();
+
+            // 3. Sostituisci i grafici canvas con immagini statiche
+            const chartIds = [
+                'dailyDeliveriesChart', 'clientsChart', 'agentsChart', 'carriersChart', 'provincesChart',
+                'worstClientsChart', 'worstAgentsChart', 'worstCarriersChart', 'worstProvincesChart'
+            ];
+            const chartInstances = [
+                dailyDeliveriesChartInstance, clientsChartInstance, agentsChartInstance, carriersChartInstance, provincesChartInstance,
+                worstClientsChartInstance, worstAgentsChartInstance, worstCarriersChartInstance, worstProvincesChartInstance
+            ];
+
+            chartIds.forEach((id, index) => {
+                const canvas = staticDoc.querySelector(`#${id}`);
+                const chartInstance = chartInstances[index];
+                if (canvas && chartInstance) {
+                    const image = new Image();
+                    image.src = chartInstance.toBase64Image();
+                    image.style.width = '100%';
+                    image.style.height = 'auto';
+                    canvas.parentNode.replaceChild(image, canvas);
+                }
+            });
+
+            // 4. Rimuovi lo script principale per evitare che venga eseguito nel file statico
+            staticDoc.querySelector('body > script')?.remove();
+
+            // 5. Crea e scarica il file HTML
+            const htmlContent = `<!DOCTYPE html>${staticDoc.outerHTML}`;
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Report-Consegne-Luglio-${new Date().toISOString().slice(0,10)}.html`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
 
 
