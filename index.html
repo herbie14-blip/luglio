@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Consegne - Luglio</title>
+    <title>Dashboard KPI Logistica CIEB - Luglio 2025</title>
     <!-- Includiamo la libreria PapaParse per leggere i file CSV -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
     <!-- Includiamo la libreria Chart.js per i grafici -->
@@ -148,8 +148,12 @@
 
         .stat-card p {
             margin: 0;
-            font-size: 2.2em;
             font-weight: bold;
+            line-height: 1;
+            font-size: clamp(1.4rem, 4vw, 2.0rem); 
+            white-space: nowrap; 
+            overflow: hidden;    
+            text-overflow: ellipsis;
         }
         
         /* Colori specifici per le schede */
@@ -157,6 +161,10 @@
         #total-value { border-color: #66bb6a; color: #66bb6a; }     /* Verde */
         #unique-clients { border-color: #ffa726; color: #ffa726; }  /* Arancione */
         #unique-agents { border-color: #ef5350; color: #ef5350; }   /* Rosso */
+        #papa-cost-incidence { border-color: #8d6e63; color: #8d6e63; } /* Marrone */
+        #papa-cost-per-delivery { border-color: #78909c; color: #78909c; } /* Grigio-Blu */
+        #papa-avg-ddt-value { border-color: #4db6ac; color: #4db6ac; } /* Teal */
+
 
         /* Stile per la card di analisi Gemini */
         #gemini-analysis-card {
@@ -273,6 +281,91 @@
             border-bottom: 2px solid #1a237e;
             padding-bottom: 10px;
         }
+
+        /* --- STILI PER LA FINESTRA MODALE --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 25px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 950px;
+            max-height: 90vh;
+            position: relative;
+            overflow-y: hidden; /* Gestito dal contenitore della tabella */
+            display: flex;
+            flex-direction: column;
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+        }
+        .modal-overlay.visible .modal-content {
+            transform: scale(1);
+        }
+        .close-modal {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 2.5rem;
+            cursor: pointer;
+            color: #aaa;
+            line-height: 1;
+        }
+        .close-modal:hover {
+            color: #333;
+        }
+        .modal-filters {
+            display: flex;
+            gap: 15px;
+            margin: 10px 0 20px 0;
+            flex-wrap: wrap;
+        }
+        .modal-filters input, .modal-filters select {
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+            font-size: 1em;
+        }
+        #modal-table-container {
+            overflow-y: auto; /* Scrollbar solo per la tabella */
+        }
+        #modal-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #modal-table th, #modal-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+            text-align: left;
+        }
+        #modal-table th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+            position: sticky;
+            top: 0;
+        }
+        #modal-table tr:hover {
+            background-color: #f9f9f9;
+        }
         
     </style>
 </head>
@@ -281,8 +374,8 @@
     <div id="app-container">
         <header class="header">
             <div class="header-text">
-                <h1>Dashboard Riepilogo Consegne</h1>
-                <p>Carica il tuo file CSV per visualizzare i dati di Luglio</p>
+                <h1>Dashboard KPI Logistica CIEB</h1>
+                <p>Analisi dati di Luglio 2025</p>
             </div>
             <button id="export-btn" disabled>Esporta HTML</button>
         </header>
@@ -296,19 +389,19 @@
         <main>
             <section class="stats-container">
                 <div class="stat-card" id="total-deliveries">
-                    <h3>Totale Consegne</h3>
+                    <h3>Totale Vendite</h3>
                     <p>0</p>
                 </div>
                 <div class="stat-card" id="total-value">
-                    <h3>Valore Totale Merce</h3>
+                    <h3>Valore Totale</h3>
                     <p>€ 0,00</p>
                 </div>
                 <div class="stat-card" id="unique-clients">
-                    <h3>Clienti Unici</h3>
+                    <h3>Prodotti Unici</h3>
                     <p>0</p>
                 </div>
                 <div class="stat-card" id="unique-agents">
-                    <h3>Agenti Unici</h3>
+                    <h3>Anomalie Rilevate</h3>
                     <p>0</p>
                 </div>
                 <div class="stat-card" id="gemini-analysis-card" style="display: none;">
@@ -319,6 +412,29 @@
                             <button class="gemini-tab-btn" data-tab="suggestions">Suggerimenti</button>
                         </div>
                         <div id="gemini-result-content"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="papa-analysis-section" style="display: none;">
+                <div class="charts-container">
+                    <h2 class="section-title">Analisi Specifica Vettore: PAPA</h2>
+                    <div class="stats-container">
+                        <div class="stat-card" id="papa-cost-incidence">
+                            <h3>Incidenza Costo Media</h3>
+                            <p>0,00 %</p>
+                        </div>
+                        <div class="stat-card" id="papa-cost-per-delivery">
+                            <h3>Costo Medio Consegna</h3>
+                            <p>€ 0,00</p>
+                        </div>
+                        <div class="stat-card" id="papa-avg-ddt-value">
+                            <h3>Valore Medio DDT</h3>
+                            <p>€ 0,00</p>
+                        </div>
+                    </div>
+                    <div class="chart-card full-width">
+                        <canvas id="papaDailyChart"></canvas>
                     </div>
                 </div>
             </section>
@@ -359,6 +475,25 @@
         </main>
     </div>
 
+    <!-- Struttura della Finestra Modale (inizialmente nascosta) -->
+    <div id="detail-modal" class="modal-overlay">
+        <div class="modal-content">
+            <button class="close-modal">&times;</button>
+            <h2 id="modal-title">Dettaglio Consegne</h2>
+            <div class="modal-filters">
+                <input type="text" id="filter-client" placeholder="Filtra per cliente...">
+                <input type="text" id="filter-province" placeholder="Filtra per provincia...">
+                <select id="sort-value">
+                    <option value="desc">Ordina per valore (Decrescente)</option>
+                    <option value="asc">Ordina per valore (Crescente)</option>
+                </select>
+            </div>
+            <div id="modal-table-container">
+                <!-- La tabella verrà inserita qui da JavaScript -->
+            </div>
+        </div>
+    </div>
+
     <script>
         // Elementi HTML
         const fileInput = document.getElementById('csvFileInput');
@@ -368,6 +503,14 @@
         const totalValueCard = document.querySelector('#total-value p');
         const uniqueClientsCard = document.querySelector('#unique-clients p');
         const uniqueAgentsCard = document.querySelector('#unique-agents p');
+
+        // Elementi Modale
+        const modal = document.getElementById('detail-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalTableContainer = document.getElementById('modal-table-container');
+        const filterClient = document.getElementById('filter-client');
+        const filterProvince = document.getElementById('filter-province');
+        const sortValue = document.getElementById('sort-value');
 
         // Elementi per Gemini
         const geminiCard = document.getElementById('gemini-analysis-card');
@@ -379,10 +522,11 @@
         let geminiSummaryResult = null;
         let geminiSuggestionsResult = null;
         
-        // Istanze dei grafici
-        let clientsChartInstance, agentsChartInstance, carriersChartInstance, provincesChartInstance, dailyDeliveriesChartInstance;
-        let worstClientsChartInstance, worstAgentsChartInstance, worstCarriersChartInstance, worstProvincesChartInstance;
-
+        // Istanze dei grafici e dati per l'esportazione
+        let chartInstances = {};
+        let chartData = {};
+        let papaRawDailyData = {}; // Memorizza i dati grezzi per la modale
+        let currentModalData = []; // Dati correnti mostrati nella modale
 
         // Event Listener per il caricamento del file
         fileInput.addEventListener('change', (event) => {
@@ -408,10 +552,17 @@
             });
         });
 
+        // Event Listener per la modale
+        modal.querySelector('.close-modal').addEventListener('click', () => modal.classList.remove('visible'));
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) modal.classList.remove('visible');
+        });
+        filterClient.addEventListener('input', applyModalFilters);
+        filterProvince.addEventListener('input', applyModalFilters);
+        sortValue.addEventListener('change', applyModalFilters);
+
         exportBtn.addEventListener('click', exportToHtml);
-        
         geminiButton.addEventListener('click', generateGeminiAnalysis);
-        
         document.getElementById('gemini-tabs').addEventListener('click', (event) => {
             if (event.target.classList.contains('gemini-tab-btn')) {
                 const tab = event.target.dataset.tab;
@@ -419,22 +570,20 @@
             }
         });
 
-
         // Elaborazione dati
         function processData(data) {
-            const DATE_COL_INDEX = 4; // Colonna E
+            const DATE_COL_INDEX = 4;
             const CLIENT_COL_INDEX = 7;
             const VALUE_COL_INDEX = 17;
             const AGENT_COL_INDEX = 57;
             const PROVINCE_COL_INDEX = 55; 
             const CARRIER_COL_INDEX = 62;
+            const TARGET_CARRIER = 'PAPA';
+            const CARRIER_COST_PER_DAY = 270;
 
             let totalValue = 0;
-            const clientSales = {};
-            const agentSales = {};
-            const carrierPerformance = {};
-            const provinceDeliveries = {};
-            const dailyDeliveries = {};
+            const clientSales = {}, agentSales = {}, carrierPerformance = {}, provinceDeliveries = {}, dailyDeliveries = {}, papaDailyData = {};
+            papaRawDailyData = {}; // Resetta i dati per la modale
             
             geminiSummaryResult = null;
             geminiSuggestionsResult = null;
@@ -468,22 +617,62 @@
                         const day = parseInt(dateStr.split('/')[0], 10);
                         if (day >= 1 && day <= 31) {
                            dailyDeliveries[day] = (dailyDeliveries[day] || 0) + 1;
+                           if (carrier?.toUpperCase() === TARGET_CARRIER) {
+                               if(!papaDailyData[day]) papaDailyData[day] = { totalValue: 0, deliveryCount: 0 };
+                               papaDailyData[day].totalValue += numericValue;
+                               papaDailyData[day].deliveryCount += 1;
+                               
+                               if(!papaRawDailyData[day]) papaRawDailyData[day] = [];
+                               papaRawDailyData[day].push(row); // Salva la riga intera per il dettaglio
+                           }
                         }
                     } catch (e) {}
                 }
             });
             
-            const dailyDataForChart = Array.from({ length: 31 }, (_, i) => i + 1).map(day => dailyDeliveries[day] || 0);
+            // Analisi specifica per PAPA
+            const papaAnalysisSection = document.getElementById('papa-analysis-section');
+            if (Object.keys(papaDailyData).length > 0) {
+                let totalValuePAPA = 0;
+                let totalDeliveriesPAPA = 0;
+                Object.values(papaDailyData).forEach(dayData => {
+                    totalValuePAPA += dayData.totalValue;
+                    totalDeliveriesPAPA += dayData.deliveryCount;
+                });
+                const totalCostPAPA = 22 * CARRIER_COST_PER_DAY;
+                const avgCostIncidence = totalValuePAPA > 0 ? (totalCostPAPA / totalValuePAPA) * 100 : 0;
+                const avgCostPerDelivery = totalDeliveriesPAPA > 0 ? totalCostPAPA / totalDeliveriesPAPA : 0;
+                const avgDdtValue = totalDeliveriesPAPA > 0 ? totalValuePAPA / totalDeliveriesPAPA : 0;
 
-            const topClients = Object.entries(clientSales).sort(([, a], [, b]) => b - a).slice(0, 10);
-            const topAgents = Object.entries(agentSales).sort(([, a], [, b]) => b - a).slice(0, 10);
-            const topCarriers = Object.entries(carrierPerformance).sort(([,a],[,b]) => b.totalValue - a.totalValue).slice(0, 10);
-            const topProvinces = Object.entries(provinceDeliveries).sort(([,a],[,b]) => b-a).slice(0,10);
+                document.querySelector('#papa-cost-incidence p').textContent = `${avgCostIncidence.toFixed(2)} %`;
+                document.querySelector('#papa-cost-per-delivery p').textContent = avgCostPerDelivery.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+                document.querySelector('#papa-avg-ddt-value p').textContent = avgDdtValue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 
-            const worstClients = Object.entries(clientSales).sort(([, a], [, b]) => a - b).slice(0, 10);
-            const worstAgents = Object.entries(agentSales).sort(([, a], [, b]) => a - b).slice(0, 10);
-            const worstCarriers = Object.entries(carrierPerformance).sort(([,a],[,b]) => a.totalValue - b.totalValue).slice(0, 10);
-            const worstProvinces = Object.entries(provinceDeliveries).sort(([,a],[,b]) => a - b).slice(0,10);
+
+                chartData.papaDailyChartData = Array.from({ length: 31 }, (_, i) => {
+                    const day = i + 1;
+                    return papaDailyData[day] || { totalValue: 0, deliveryCount: 0 };
+                });
+                
+                papaAnalysisSection.style.display = 'block';
+            } else {
+                papaAnalysisSection.style.display = 'none';
+                chartData.papaDailyChartData = null;
+            }
+
+            // Salva dati per i grafici
+            chartData = {
+                ...chartData,
+                dailyDataForChart: Array.from({ length: 31 }, (_, i) => i + 1).map(day => dailyDeliveries[day] || 0),
+                topClients: Object.entries(clientSales).sort(([, a], [, b]) => b - a).slice(0, 10),
+                topAgents: Object.entries(agentSales).sort(([, a], [, b]) => b - a).slice(0, 10),
+                topCarriers: Object.entries(carrierPerformance).sort(([,a],[,b]) => b.totalValue - a.totalValue).slice(0, 10),
+                topProvinces: Object.entries(provinceDeliveries).sort(([,a],[,b]) => b-a).slice(0,10),
+                worstClients: Object.entries(clientSales).sort(([, a], [, b]) => a - b).slice(0, 10),
+                worstAgents: Object.entries(agentSales).sort(([, a], [, b]) => a - b).slice(0, 10),
+                worstCarriers: Object.entries(carrierPerformance).sort(([,a],[,b]) => a.totalValue - b.totalValue).slice(0, 10),
+                worstProvinces: Object.entries(provinceDeliveries).sort(([,a],[,b]) => a - b).slice(0,10)
+            };
 
             totalDeliveriesCard.textContent = data.length.toLocaleString('it-IT');
             totalValueCard.textContent = totalValue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
@@ -492,22 +681,93 @@
             
             processedDataSummary = {
                 totalDeliveries: data.length, totalValue,
-                topClients: topClients.slice(0, 3),
-                topAgents: topAgents.slice(0, 3),
-                topCarriers: topCarriers.slice(0, 3),
-                topProvinces: topProvinces.slice(0, 3),
-                worstClients: worstClients.slice(0, 3),
-                worstAgents: worstAgents.slice(0, 3),
-                worstCarriers: worstCarriers.slice(0, 3),
-                worstProvinces: worstProvinces.slice(0, 3)
+                topClients: chartData.topClients.slice(0, 3),
+                topAgents: chartData.topAgents.slice(0, 3),
+                topCarriers: chartData.topCarriers.slice(0, 3),
+                topProvinces: chartData.topProvinces.slice(0, 3),
+                worstClients: chartData.worstClients.slice(0, 3),
+                worstAgents: chartData.worstAgents.slice(0, 3),
+                worstCarriers: chartData.worstCarriers.slice(0, 3),
+                worstProvinces: chartData.worstProvinces.slice(0, 3)
             };
             
             geminiCard.style.display = 'flex';
             geminiButton.style.display = 'block';
             geminiContent.style.display = 'none';
             
-            renderCharts(topClients, topAgents, topCarriers, topProvinces, dailyDataForChart, worstClients, worstAgents, worstCarriers, worstProvinces);
+            renderCharts(chartData);
         }
+
+        // --- Funzioni per la Finestra Modale ---
+        function openModal(day) {
+            currentModalData = papaRawDailyData[day] || [];
+            if (currentModalData.length === 0) return;
+
+            modalTitle.textContent = `Dettaglio Consegne del Giorno ${day} Luglio`;
+            filterClient.value = '';
+            filterProvince.value = '';
+            sortValue.value = 'desc';
+            
+            applyModalFilters(); // Renderizza la tabella iniziale
+            modal.classList.add('visible');
+        }
+
+        function applyModalFilters() {
+            const clientFilter = filterClient.value.toLowerCase();
+            const provinceFilter = filterProvince.value.toLowerCase();
+            const sortOrder = sortValue.value;
+            
+            let filteredData = [...currentModalData];
+
+            if (clientFilter) {
+                filteredData = filteredData.filter(row => row[7]?.toLowerCase().includes(clientFilter));
+            }
+            if (provinceFilter) {
+                filteredData = filteredData.filter(row => row[55]?.toLowerCase().includes(provinceFilter));
+            }
+            
+            filteredData.sort((a, b) => {
+                const valA = parseFloat(a[17]?.toString().replace(/\./g, '').replace(',', '.') || 0);
+                const valB = parseFloat(b[17]?.toString().replace(/\./g, '').replace(',', '.') || 0);
+                return sortOrder === 'asc' ? valA - valB : valB - valA;
+            });
+            
+            renderModalTable(filteredData);
+        }
+
+        function renderModalTable(data) {
+            let tableHtml = `<table id="modal-table">
+                <thead>
+                    <tr><th>Cliente</th><th>Provincia</th><th>Valore</th></tr>
+                </thead>
+                <tbody>`;
+            
+            if (data.length === 0) {
+                tableHtml += `<tr><td colspan="3" style="text-align:center;">Nessun dato trovato per i filtri selezionati.</td></tr>`;
+            } else {
+                data.forEach(row => {
+                    const client = row[7] || 'N/D';
+                    const province = row[55] || 'N/D';
+                    const rawValue = row[17];
+                    let value = 0;
+                    if (rawValue) {
+                         const cleanedString = rawValue.toString().replace(/\./g, '').replace(',', '.').replace(/[^0-9.-]/g, '');
+                         value = parseFloat(cleanedString) || 0;
+                    }
+
+                    tableHtml += `<tr>
+                        <td>${client}</td>
+                        <td>${province}</td>
+                        <td>${value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}</td>
+                    </tr>`;
+                });
+            }
+            
+            tableHtml += `</tbody></table>`;
+            modalTableContainer.innerHTML = tableHtml;
+        }
+
+        // --- Fine Funzioni Modale ---
 
         // Funzione per chiamare l'API Gemini
         async function callGeminiAPI(prompt) {
@@ -591,46 +851,45 @@
         }
 
         function exportToHtml() {
-            // 1. Clona il documento per non modificare la pagina live
+            // 1. Clona il documento
             const staticDoc = document.documentElement.cloneNode(true);
 
-            // 2. Rimuovi gli elementi interattivi dal clone
+            // 2. Rimuovi elementi interattivi non necessari nel report statico
             staticDoc.querySelector('.upload-section')?.remove();
             staticDoc.querySelector('#export-btn')?.remove();
+            staticDoc.querySelector('#gemini-analysis-card')?.remove();
+            staticDoc.querySelector('#detail-modal')?.remove(); // Rimuovi anche la modale
+            staticDoc.querySelector('body > script')?.remove(); // Rimuovi lo script originale
 
-            // 3. Sostituisci i grafici canvas con immagini statiche
-            const chartIds = [
-                'dailyDeliveriesChart', 'clientsChart', 'agentsChart', 'carriersChart', 'provincesChart',
-                'worstClientsChart', 'worstAgentsChart', 'worstCarriersChart', 'worstProvincesChart'
-            ];
-            const chartInstances = [
-                dailyDeliveriesChartInstance, clientsChartInstance, agentsChartInstance, carriersChartInstance, provincesChartInstance,
-                worstClientsChartInstance, worstAgentsChartInstance, worstCarriersChartInstance, worstProvincesChartInstance
-            ];
+            // 3. Crea un nuovo script per re-inizializzare i grafici
+            const initScript = document.createElement('script'); // CORREZIONE QUI
+            
+            // La funzione di rendering dei grafici da includere nel file esportato
+            const renderFunctionString = renderCharts.toString();
 
-            chartIds.forEach((id, index) => {
-                const canvas = staticDoc.querySelector(`#${id}`);
-                const chartInstance = chartInstances[index];
-                if (canvas && chartInstance) {
-                    const image = new Image();
-                    image.src = chartInstance.toBase64Image();
-                    image.style.width = '100%';
-                    image.style.height = 'auto';
-                    canvas.parentNode.replaceChild(image, canvas);
-                }
-            });
+            initScript.innerHTML = `
+                window.addEventListener('load', () => {
+                    const chartData = ${JSON.stringify(chartData)};
+                    const chartInstances = {};
+                    
+                    // Includiamo la definizione della funzione di rendering
+                    const renderCharts = ${renderFunctionString};
 
-            // 4. Rimuovi lo script principale per evitare che venga eseguito nel file statico
-            staticDoc.querySelector('body > script')?.remove();
+                    // Eseguiamo il rendering
+                    renderCharts(chartData);
+                });
+            `;
+            
+            staticDoc.querySelector('body').appendChild(initScript);
 
-            // 5. Crea e scarica il file HTML
+            // 4. Crea e scarica il file HTML
             const htmlContent = `<!DOCTYPE html>${staticDoc.outerHTML}`;
             const blob = new Blob([htmlContent], { type: 'text/html' });
             const url = URL.createObjectURL(blob);
             
             const a = document.createElement('a');
             a.href = url;
-            a.download = `Report-Consegne-Luglio-${new Date().toISOString().slice(0,10)}.html`;
+            a.download = `Report-KPI-Logistica-CIEB-Luglio-2025.html`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -639,57 +898,102 @@
 
 
         // Funzione per creare e aggiornare i grafici
-        function renderCharts(topClients, topAgents, topCarriers, topProvinces, dailyData, worstClients, worstAgents, worstCarriers, worstProvinces) {
-            const destroyIfExists = (chartInstance) => { if(chartInstance) chartInstance.destroy(); };
-            [clientsChartInstance, agentsChartInstance, carriersChartInstance, provincesChartInstance, dailyDeliveriesChartInstance, worstClientsChartInstance, worstAgentsChartInstance, worstCarriersChartInstance, worstProvincesChartInstance].forEach(destroyIfExists);
+        function renderCharts(cData) {
+            const { topClients, topAgents, topCarriers, topProvinces, dailyDataForChart, worstClients, worstAgents, worstCarriers, worstProvinces, papaDailyChartData } = cData;
 
-            // Grafico Andamento Giornaliero
+            Object.values(chartInstances).forEach(instance => instance?.destroy());
+
+            // Grafico specifico per PAPA
+            if (papaDailyChartData) {
+                const papaCtx = document.getElementById('papaDailyChart').getContext('2d');
+                chartInstances.papa = new Chart(papaCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: Array.from({ length: 31 }, (_, i) => i + 1),
+                        datasets: [{
+                            label: 'Valore Merce (€)',
+                            data: papaDailyChartData.map(d => d.totalValue),
+                            backgroundColor: 'rgba(102, 187, 106, 0.6)',
+                            borderColor: 'rgba(102, 187, 106, 1)',
+                            yAxisID: 'y'
+                        }, {
+                            label: 'N. Consegne',
+                            data: papaDailyChartData.map(d => d.deliveryCount),
+                            type: 'line',
+                            backgroundColor: 'rgba(66, 165, 245, 0.6)',
+                            borderColor: 'rgba(66, 165, 245, 1)',
+                            yAxisID: 'y1',
+                            tension: 0.3
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { title: { display: true, text: 'Performance Giornaliera Vettore: PAPA', font: { size: 16 } } },
+                        onClick: (event, elements) => {
+                            if (elements.length > 0) {
+                                const dayIndex = elements[0].index;
+                                const day = dayIndex + 1;
+                                openModal(day);
+                            }
+                        },
+                        scales: {
+                            y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Valore Merce (€)' }, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } },
+                            y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Numero Consegne' }, grid: { drawOnChartArea: false }, ticks: { precision: 0 } }
+                        }
+                    }
+                });
+            }
+
             const dailyCtx = document.getElementById('dailyDeliveriesChart').getContext('2d');
-            dailyDeliveriesChartInstance = new Chart(dailyCtx, {
-                type: 'line', data: { labels: Array.from({ length: 31 }, (_, i) => i + 1), datasets: [{ label: 'Numero Consegne', data: dailyData, borderColor: 'rgba(26, 35, 126, 1)', backgroundColor: 'rgba(26, 35, 126, 0.1)', fill: true, tension: 0.3 }] },
+            chartInstances.daily = new Chart(dailyCtx, {
+                type: 'line', data: { labels: Array.from({ length: 31 }, (_, i) => i + 1), datasets: [{ label: 'Numero Consegne', data: dailyDataForChart, borderColor: 'rgba(26, 35, 126, 1)', backgroundColor: 'rgba(26, 35, 126, 0.1)', fill: true, tension: 0.3 }] },
                 options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Andamento Consegne Giornaliere - Luglio', font: { size: 16 } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { title: { display: true, text: 'Giorno del mese' } } } }
             });
 
-            // Grafici TOP
             const clientsCtx = document.getElementById('clientsChart').getContext('2d');
-            clientsChartInstance = new Chart(clientsCtx, {
+            chartInstances.clients = new Chart(clientsCtx, {
                 type: 'bar', data: { labels: topClients.map(item => item[0]), datasets: [{ label: 'Valore Consegne (€)', data: topClients.map(item => item[1]), backgroundColor: 'rgba(66, 165, 245, 0.6)', borderColor: 'rgba(66, 165, 245, 1)', borderWidth: 1 }] },
                 options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false }, title: { display: true, text: 'Clienti per Valore', font: { size: 16 } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y: { ticks: { autoSkip: false } } } }
             });
+
             const agentsCtx = document.getElementById('agentsChart').getContext('2d');
-            agentsChartInstance = new Chart(agentsCtx, {
+            chartInstances.agents = new Chart(agentsCtx, {
                 type: 'bar', data: { labels: topAgents.map(item => item[0]), datasets: [{ label: 'Valore Consegne (€)', data: topAgents.map(item => item[1]), backgroundColor: 'rgba(102, 187, 106, 0.6)', borderColor: 'rgba(102, 187, 106, 1)', borderWidth: 1 }] },
                 options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false }, title: { display: true, text: 'Agenti per Valore', font: { size: 16 } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y: { ticks: { autoSkip: false } } } }
             });
+            
             const carriersCtx = document.getElementById('carriersChart').getContext('2d');
-            carriersChartInstance = new Chart(carriersCtx, {
+            chartInstances.carriers = new Chart(carriersCtx, {
                 type: 'bar', data: { labels: topCarriers.map(item => item[0]), datasets: [ { label: 'Valore (€)', data: topCarriers.map(item => item[1].totalValue), backgroundColor: 'rgba(255, 167, 38, 0.6)', borderColor: 'rgba(255, 167, 38, 1)', yAxisID: 'y' }, { label: 'N. Consegne', data: topCarriers.map(item => item[1].deliveryCount), backgroundColor: 'rgba(239, 83, 80, 0.6)', borderColor: 'rgba(239, 83, 80, 1)', yAxisID: 'y1' } ] },
                 options: { responsive: true, plugins: { title: { display: true, text: 'Vettori per Performance', font: { size: 16 } } }, scales: { y: { position: 'left', beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { precision: 0 } } } }
             });
+
             const provincesCtx = document.getElementById('provincesChart').getContext('2d');
-            provincesChartInstance = new Chart(provincesCtx, {
+            chartInstances.provinces = new Chart(provincesCtx, {
                 type: 'bar', data: { labels: topProvinces.map(item => item[0]), datasets: [{ label: 'Numero Consegne', data: topProvinces.map(item => item[1]), backgroundColor: 'rgba(126, 87, 194, 0.6)', borderColor: 'rgba(126, 87, 194, 1)', borderWidth: 1 }] },
                 options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Province per N. Consegne', font: { size: 16 } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
             });
 
-            // Grafici FLOP
             const worstClientsCtx = document.getElementById('worstClientsChart').getContext('2d');
-            worstClientsChartInstance = new Chart(worstClientsCtx, {
+            chartInstances.worstClients = new Chart(worstClientsCtx, {
                 type: 'bar', data: { labels: worstClients.map(item => item[0]), datasets: [{ label: 'Valore Consegne (€)', data: worstClients.map(item => item[1]), backgroundColor: 'rgba(255, 112, 67, 0.6)', borderColor: 'rgba(255, 112, 67, 1)', borderWidth: 1 }] },
                 options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false }, title: { display: true, text: 'Clienti per Valore', font: { size: 16 } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y: { ticks: { autoSkip: false } } } }
             });
+
             const worstAgentsCtx = document.getElementById('worstAgentsChart').getContext('2d');
-            worstAgentsChartInstance = new Chart(worstAgentsCtx, {
+            chartInstances.worstAgents = new Chart(worstAgentsCtx, {
                 type: 'bar', data: { labels: worstAgents.map(item => item[0]), datasets: [{ label: 'Valore Consegne (€)', data: worstAgents.map(item => item[1]), backgroundColor: 'rgba(255, 112, 67, 0.6)', borderColor: 'rgba(255, 112, 67, 1)', borderWidth: 1 }] },
                 options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false }, title: { display: true, text: 'Agenti per Valore', font: { size: 16 } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y: { ticks: { autoSkip: false } } } }
             });
+
             const worstCarriersCtx = document.getElementById('worstCarriersChart').getContext('2d');
-            worstCarriersChartInstance = new Chart(worstCarriersCtx, {
+            chartInstances.worstCarriers = new Chart(worstCarriersCtx, {
                 type: 'bar', data: { labels: worstCarriers.map(item => item[0]), datasets: [ { label: 'Valore (€)', data: worstCarriers.map(item => item[1].totalValue), backgroundColor: 'rgba(255, 112, 67, 0.6)', borderColor: 'rgba(255, 112, 67, 1)', yAxisID: 'y' }, { label: 'N. Consegne', data: worstCarriers.map(item => item[1].deliveryCount), backgroundColor: 'rgba(255, 158, 128, 0.6)', borderColor: 'rgba(255, 158, 128, 1)', yAxisID: 'y1' } ] },
                 options: { responsive: true, plugins: { title: { display: true, text: 'Vettori per Performance', font: { size: 16 } } }, scales: { y: { position: 'left', beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { precision: 0 } } } }
             });
+
             const worstProvincesCtx = document.getElementById('worstProvincesChart').getContext('2d');
-            worstProvincesChartInstance = new Chart(worstProvincesCtx, {
+            chartInstances.worstProvinces = new Chart(worstProvincesCtx, {
                 type: 'bar', data: { labels: worstProvinces.map(item => item[0]), datasets: [{ label: 'Numero Consegne', data: worstProvinces.map(item => item[1]), backgroundColor: 'rgba(255, 112, 67, 0.6)', borderColor: 'rgba(255, 112, 67, 1)', borderWidth: 1 }] },
                 options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Province per N. Consegne', font: { size: 16 } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
             });
@@ -697,5 +1001,4 @@
     </script>
 </body>
 </html>
-
 
