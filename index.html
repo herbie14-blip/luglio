@@ -225,6 +225,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
             gap: 30px;
+            margin-bottom: 30px;
         }
         
         .chart-card.full-width {
@@ -236,6 +237,16 @@
             padding: 20px;
             border-radius: 10px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+        
+        .section-title {
+            grid-column: 1 / -1;
+            text-align: center;
+            font-size: 1.5em;
+            color: #1a237e;
+            margin: 20px 0 0 0;
+            border-bottom: 2px solid #1a237e;
+            padding-bottom: 10px;
         }
         
     </style>
@@ -288,6 +299,8 @@
                 <div class="chart-card full-width">
                     <canvas id="dailyDeliveriesChart"></canvas>
                 </div>
+
+                <h2 class="section-title">Migliori Performance (Top 10)</h2>
                 <div class="chart-card">
                     <canvas id="clientsChart"></canvas>
                 </div>
@@ -299,6 +312,20 @@
                 </div>
                 <div class="chart-card">
                     <canvas id="provincesChart"></canvas>
+                </div>
+
+                <h2 class="section-title">Performance da Monitorare (Flop 10)</h2>
+                <div class="chart-card">
+                    <canvas id="worstClientsChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <canvas id="worstAgentsChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <canvas id="worstCarriersChart"></canvas>
+                </div>
+                <div class="chart-card">
+                    <canvas id="worstProvincesChart"></canvas>
                 </div>
             </section>
         </main>
@@ -324,11 +351,8 @@
         let geminiSuggestionsResult = null;
         
         // Istanze dei grafici
-        let clientsChartInstance = null;
-        let agentsChartInstance = null;
-        let carriersChartInstance = null;
-        let provincesChartInstance = null;
-        let dailyDeliveriesChartInstance = null;
+        let clientsChartInstance, agentsChartInstance, carriersChartInstance, provincesChartInstance, dailyDeliveriesChartInstance;
+        let worstClientsChartInstance, worstAgentsChartInstance, worstCarriersChartInstance, worstProvincesChartInstance;
 
 
         // Event Listener per il caricamento del file
@@ -376,7 +400,6 @@
             const provinceDeliveries = {};
             const dailyDeliveries = {};
             
-            // Pulisci i dati vecchi di Gemini
             geminiSummaryResult = null;
             geminiSuggestionsResult = null;
             
@@ -396,11 +419,11 @@
                     else numericValue = 0;
                 }
                 
-                if (client && numericValue > 0) clientSales[client] = (clientSales[client] || 0) + numericValue;
-                if (agent && numericValue > 0) agentSales[agent] = (agentSales[agent] || 0) + numericValue;
+                if (client) clientSales[client] = (clientSales[client] || 0) + numericValue;
+                if (agent) agentSales[agent] = (agentSales[agent] || 0) + numericValue;
                 if (carrier) {
                     if (!carrierPerformance[carrier]) carrierPerformance[carrier] = { totalValue: 0, deliveryCount: 0 };
-                    if (numericValue > 0) carrierPerformance[carrier].totalValue += numericValue;
+                    carrierPerformance[carrier].totalValue += numericValue;
                     carrierPerformance[carrier].deliveryCount += 1;
                 }
                 if (province) provinceDeliveries[province] = (provinceDeliveries[province] || 0) + 1;
@@ -421,6 +444,11 @@
             const topCarriers = Object.entries(carrierPerformance).sort(([,a],[,b]) => b.totalValue - a.totalValue).slice(0, 10);
             const topProvinces = Object.entries(provinceDeliveries).sort(([,a],[,b]) => b-a).slice(0,10);
 
+            const worstClients = Object.entries(clientSales).sort(([, a], [, b]) => a - b).slice(0, 10);
+            const worstAgents = Object.entries(agentSales).sort(([, a], [, b]) => a - b).slice(0, 10);
+            const worstCarriers = Object.entries(carrierPerformance).sort(([,a],[,b]) => a.totalValue - b.totalValue).slice(0, 10);
+            const worstProvinces = Object.entries(provinceDeliveries).sort(([,a],[,b]) => a - b).slice(0,10);
+
             totalDeliveriesCard.textContent = data.length.toLocaleString('it-IT');
             totalValueCard.textContent = totalValue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
             uniqueClientsCard.textContent = Object.keys(clientSales).length.toLocaleString('it-IT');
@@ -431,15 +459,18 @@
                 topClients: topClients.slice(0, 3),
                 topAgents: topAgents.slice(0, 3),
                 topCarriers: topCarriers.slice(0, 3),
-                topProvinces: topProvinces.slice(0, 3)
+                topProvinces: topProvinces.slice(0, 3),
+                worstClients: worstClients.slice(0, 3),
+                worstAgents: worstAgents.slice(0, 3),
+                worstCarriers: worstCarriers.slice(0, 3),
+                worstProvinces: worstProvinces.slice(0, 3)
             };
             
             geminiCard.style.display = 'flex';
             geminiButton.style.display = 'block';
             geminiContent.style.display = 'none';
-            geminiContent.innerHTML = '';
             
-            renderCharts(topClients, topAgents, topCarriers, topProvinces, dailyDataForChart);
+            renderCharts(topClients, topAgents, topCarriers, topProvinces, dailyDataForChart, worstClients, worstAgents, worstCarriers, worstProvinces);
         }
 
         // Funzione per chiamare l'API Gemini
@@ -460,140 +491,128 @@
         }
 
         async function generateGeminiAnalysis() {
-            if (!processedDataSummary) return alert("Per favore, carica prima un file di dati.");
+            if (!processedDataSummary) { 
+                alert("Per favore, carica prima un file di dati.");
+                return;
+            }
 
             geminiButton.style.display = 'none';
             geminiContent.style.display = 'block';
-            geminiContent.innerHTML = '<div class="loader"></div>';
+            geminiResultContent.innerHTML = '<div class="loader"></div>';
 
-            const { totalDeliveries, totalValue, topClients, topAgents, topCarriers, topProvinces } = processedDataSummary;
+            document.querySelectorAll('.gemini-tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector('.gemini-tab-btn[data-tab="summary"]').classList.add('active');
+
+            const { totalDeliveries, totalValue, topClients, topAgents, topCarriers, topProvinces, worstClients, worstAgents, worstCarriers, worstProvinces } = processedDataSummary;
             
-            const summaryPrompt = `Sei un analista di dati. Basandoti sui seguenti dati di riepilogo per le consegne di un mese, scrivi un'analisi concisa (massimo 3 frasi) in italiano. Evidenzia un punto di forza e suggerisci una possibile area di indagine.
+            const summaryPrompt = `Sei un analista di dati. Basandoti sui seguenti dati, scrivi un'analisi concisa (massimo 3 frasi) in italiano. Evidenzia un punto di forza (dai dati top) e un punto di debolezza o area di attenzione (dai dati flop).
             Dati:
             - Totale Consegne: ${totalDeliveries.toLocaleString('it-IT')}
             - Valore Totale: ${totalValue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}
             - Primi 3 Clienti: ${topClients.map(c => c[0]).join(', ')}
             - Primi 3 Agenti: ${topAgents.map(a => a[0]).join(', ')}
-            - Primi 3 Vettori (per valore): ${topCarriers.map(v => v[0]).join(', ')}
-            - Prime 3 Province: ${topProvinces.map(p => p[0]).join(', ')}`;
+            - Prime 3 Province: ${topProvinces.map(p => p[0]).join(', ')}
+            - Peggiori 3 Clienti: ${worstClients.map(c => c[0]).join(', ')}
+            - Peggiori 3 Agenti: ${worstAgents.map(a => a[0]).join(', ')}`;
             
-            const suggestionsPrompt = `Sei un consulente strategico. Basandoti sui dati di performance di un mese, fornisci 3 suggerimenti strategici concreti e attuabili in italiano. Struttura la risposta come una lista puntata (usa *).
-            Un suggerimento deve riguardare i clienti (es. fidelizzazione), uno gli agenti (es. incentivazione) e uno la logistica (es. ottimizzazione vettori o aree geografiche).
+            const suggestionsPrompt = `Sei un consulente strategico. Basandoti sui dati, fornisci 3 suggerimenti strategici concreti e attuabili in italiano. Struttura la risposta come una lista puntata (usa *).
+            Un suggerimento deve riguardare i clienti (considerando sia i top che i flop).
+            Un suggerimento deve riguardare gli agenti (considerando top e flop).
+            Un suggerimento deve riguardare la logistica (vettori o province).
             Dati:
-            - Valore Totale: ${totalValue.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })}
-            - Primi 3 Clienti per valore: ${topClients.map(c => `${c[0]} (${c[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
-            - Primi 3 Agenti per valore: ${topAgents.map(a => `${a[0]} (${a[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
-            - Primi 3 Vettori (per n. consegne): ${topCarriers.map(v => `${v[0]} (${v[1].deliveryCount} consegne)`).join(', ')}
-            - Prime 3 Province (per n. consegne): ${topProvinces.map(p => `${p[0]} (${p[1]} consegne)`).join(', ')}`;
+            - Top 3 Clienti: ${topClients.map(c => `${c[0]} (${c[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
+            - Flop 3 Clienti: ${worstClients.map(c => `${c[0]} (${c[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
+            - Top 3 Agenti: ${topAgents.map(a => `${a[0]} (${a[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
+            - Flop 3 Agenti: ${worstAgents.map(a => `${a[0]} (${a[1].toLocaleString('it-IT', { style: 'currency', currency: 'EUR' })})`).join(', ')}
+            - Top 3 Vettori (n. consegne): ${topCarriers.map(v => `${v[0]} (${v[1].deliveryCount} consegne)`).join(', ')}`;
 
             try {
-                // Eseguiamo entrambe le chiamate in parallelo
                 const [summary, suggestions] = await Promise.all([
                     callGeminiAPI(summaryPrompt),
                     callGeminiAPI(suggestionsPrompt)
                 ]);
                 geminiSummaryResult = summary;
                 geminiSuggestionsResult = suggestions.replace(/\* /g, '<li>').replace(/$/gm, '</li>').replace(/\n/g, '');
-
-                renderGeminiUI();
+                
                 switchGeminiTab('summary');
 
             } catch (error) {
                 console.error("Errore nella chiamata a Gemini:", error);
-                geminiContent.innerHTML = `<p style="color: red; text-align:center;">Spiacente, non è stato possibile generare l'analisi. Riprova.</p>`;
+                geminiResultContent.innerHTML = `<p style="color: red; text-align:center;">Spiacente, non è stato possibile generare l'analisi. Riprova.</p>`;
                 geminiButton.style.display = 'block';
             }
-        }
-        
-        function renderGeminiUI() {
-            geminiContent.innerHTML = `
-                <div id="gemini-tabs">
-                    <button class="gemini-tab-btn" data-tab="summary">Riepilogo</button>
-                    <button class="gemini-tab-btn" data-tab="suggestions">Suggerimenti</button>
-                </div>
-                <div id="gemini-result-content"></div>`;
         }
         
         function switchGeminiTab(tab) {
             document.querySelectorAll('.gemini-tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelector(`.gemini-tab-btn[data-tab="${tab}"]`).classList.add('active');
             
-            const resultContent = document.getElementById('gemini-result-content');
             if (tab === 'summary') {
-                resultContent.innerHTML = `<p>${geminiSummaryResult}</p>`;
+                geminiResultContent.innerHTML = geminiSummaryResult ? `<p>${geminiSummaryResult}</p>` : 'Nessun riepilogo disponibile.';
             } else {
-                resultContent.innerHTML = `<ul>${geminiSuggestionsResult}</ul>`;
+                geminiResultContent.innerHTML = geminiSuggestionsResult ? `<ul>${geminiSuggestionsResult}</ul>` : 'Nessun suggerimento disponibile.';
             }
         }
 
 
         // Funzione per creare e aggiornare i grafici
-        function renderCharts(topClients, topAgents, topCarriers, topProvinces, dailyData) {
-            if(clientsChartInstance) clientsChartInstance.destroy();
-            if(agentsChartInstance) agentsChartInstance.destroy();
-            if(carriersChartInstance) carriersChartInstance.destroy();
-            if(provincesChartInstance) provincesChartInstance.destroy();
-            if(dailyDeliveriesChartInstance) dailyDeliveriesChartInstance.destroy();
+        function renderCharts(topClients, topAgents, topCarriers, topProvinces, dailyData, worstClients, worstAgents, worstCarriers, worstProvinces) {
+            const destroyIfExists = (chartInstance) => { if(chartInstance) chartInstance.destroy(); };
+            [clientsChartInstance, agentsChartInstance, carriersChartInstance, provincesChartInstance, dailyDeliveriesChartInstance, worstClientsChartInstance, worstAgentsChartInstance, worstCarriersChartInstance, worstProvincesChartInstance].forEach(destroyIfExists);
 
             // Grafico Andamento Giornaliero
             const dailyCtx = document.getElementById('dailyDeliveriesChart').getContext('2d');
             dailyDeliveriesChartInstance = new Chart(dailyCtx, {
-                type: 'line',
-                data: {
-                    labels: Array.from({ length: 31 }, (_, i) => i + 1), // Etichette da 1 a 31
-                    datasets: [{
-                        label: 'Numero Consegne', data: dailyData,
-                        borderColor: 'rgba(26, 35, 126, 1)', backgroundColor: 'rgba(26, 35, 126, 0.1)',
-                        fill: true, tension: 0.3
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: { legend: { display: false }, title: { display: true, text: 'Andamento Consegne Giornaliere - Luglio', font: { size: 16 } } },
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { title: { display: true, text: 'Giorno del mese' } } }
-                }
+                type: 'line', data: { labels: Array.from({ length: 31 }, (_, i) => i + 1), datasets: [{ label: 'Numero Consegne', data: dailyData, borderColor: 'rgba(26, 35, 126, 1)', backgroundColor: 'rgba(26, 35, 126, 0.1)', fill: true, tension: 0.3 }] },
+                options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Andamento Consegne Giornaliere - Luglio', font: { size: 16 } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { title: { display: true, text: 'Giorno del mese' } } } }
             });
 
-            // Grafico Clienti
+            // Grafici TOP
             const clientsCtx = document.getElementById('clientsChart').getContext('2d');
             clientsChartInstance = new Chart(clientsCtx, {
                 type: 'bar', data: { labels: topClients.map(item => item[0]), datasets: [{ label: 'Valore Consegne (€)', data: topClients.map(item => item[1]), backgroundColor: 'rgba(66, 165, 245, 0.6)', borderColor: 'rgba(66, 165, 245, 1)', borderWidth: 1 }] },
-                options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Top 10 Clienti per Valore', font: { size: 16 } } }, scales: { y: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } } } }
+                options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false }, title: { display: true, text: 'Clienti per Valore', font: { size: 16 } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y: { ticks: { autoSkip: false } } } }
             });
-
-            // Grafico Agenti
             const agentsCtx = document.getElementById('agentsChart').getContext('2d');
             agentsChartInstance = new Chart(agentsCtx, {
-                type: 'bar', data: { labels: topAgents.map(item => item[0]), datasets: [{ label: 'Valore Consegne (€)', data: topAgents.map(item => item[1]), backgroundColor: 'rgba(239, 83, 80, 0.6)', borderColor: 'rgba(239, 83, 80, 1)', borderWidth: 1 }] },
-                options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Top 10 Agenti per Valore', font: { size: 16 } } }, scales: { y: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } } } }
+                type: 'bar', data: { labels: topAgents.map(item => item[0]), datasets: [{ label: 'Valore Consegne (€)', data: topAgents.map(item => item[1]), backgroundColor: 'rgba(102, 187, 106, 0.6)', borderColor: 'rgba(102, 187, 106, 1)', borderWidth: 1 }] },
+                options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false }, title: { display: true, text: 'Agenti per Valore', font: { size: 16 } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y: { ticks: { autoSkip: false } } } }
             });
-
-            // Grafico Vettori
             const carriersCtx = document.getElementById('carriersChart').getContext('2d');
             carriersChartInstance = new Chart(carriersCtx, {
-                type: 'bar', data: { labels: topCarriers.map(item => item[0]), datasets: [ { label: 'Valore Totale (€)', data: topCarriers.map(item => item[1].totalValue), backgroundColor: 'rgba(102, 187, 106, 0.6)', borderColor: 'rgba(102, 187, 106, 1)', borderWidth: 1, yAxisID: 'y' }, { label: 'Numero Consegne', data: topCarriers.map(item => item[1].deliveryCount), backgroundColor: 'rgba(255, 167, 38, 0.6)', borderColor: 'rgba(255, 167, 38, 1)', borderWidth: 1, yAxisID: 'y1' } ] },
-                options: { responsive: true, plugins: { legend: { display: true }, title: { display: true, text: 'Top 10 Vettori per Performance', font: { size: 16 } } }, scales: { y: { type: 'linear', position: 'left', beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y1: { type: 'linear', position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } } } }
+                type: 'bar', data: { labels: topCarriers.map(item => item[0]), datasets: [ { label: 'Valore (€)', data: topCarriers.map(item => item[1].totalValue), backgroundColor: 'rgba(255, 167, 38, 0.6)', borderColor: 'rgba(255, 167, 38, 1)', yAxisID: 'y' }, { label: 'N. Consegne', data: topCarriers.map(item => item[1].deliveryCount), backgroundColor: 'rgba(239, 83, 80, 0.6)', borderColor: 'rgba(239, 83, 80, 1)', yAxisID: 'y1' } ] },
+                options: { responsive: true, plugins: { title: { display: true, text: 'Vettori per Performance', font: { size: 16 } } }, scales: { y: { position: 'left', beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { precision: 0 } } } }
             });
-
-            // Grafico Province
             const provincesCtx = document.getElementById('provincesChart').getContext('2d');
             provincesChartInstance = new Chart(provincesCtx, {
-                type: 'bar',
-                data: {
-                    labels: topProvinces.map(item => item[0]),
-                    datasets: [{
-                        label: 'Numero Consegne', data: topProvinces.map(item => item[1]),
-                        backgroundColor: 'rgba(126, 87, 194, 0.6)', borderColor: 'rgba(126, 87, 194, 1)', borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: { legend: { display: false }, title: { display: true, text: 'Top 10 Province per Numero Consegne', font: { size: 16 } } },
-                    scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
-                }
+                type: 'bar', data: { labels: topProvinces.map(item => item[0]), datasets: [{ label: 'Numero Consegne', data: topProvinces.map(item => item[1]), backgroundColor: 'rgba(126, 87, 194, 0.6)', borderColor: 'rgba(126, 87, 194, 1)', borderWidth: 1 }] },
+                options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Province per N. Consegne', font: { size: 16 } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+            });
+
+            // Grafici FLOP
+            const worstClientsCtx = document.getElementById('worstClientsChart').getContext('2d');
+            worstClientsChartInstance = new Chart(worstClientsCtx, {
+                type: 'bar', data: { labels: worstClients.map(item => item[0]), datasets: [{ label: 'Valore Consegne (€)', data: worstClients.map(item => item[1]), backgroundColor: 'rgba(255, 112, 67, 0.6)', borderColor: 'rgba(255, 112, 67, 1)', borderWidth: 1 }] },
+                options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false }, title: { display: true, text: 'Clienti per Valore', font: { size: 16 } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y: { ticks: { autoSkip: false } } } }
+            });
+            const worstAgentsCtx = document.getElementById('worstAgentsChart').getContext('2d');
+            worstAgentsChartInstance = new Chart(worstAgentsCtx, {
+                type: 'bar', data: { labels: worstAgents.map(item => item[0]), datasets: [{ label: 'Valore Consegne (€)', data: worstAgents.map(item => item[1]), backgroundColor: 'rgba(255, 112, 67, 0.6)', borderColor: 'rgba(255, 112, 67, 1)', borderWidth: 1 }] },
+                options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false }, title: { display: true, text: 'Agenti per Valore', font: { size: 16 } } }, scales: { x: { beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y: { ticks: { autoSkip: false } } } }
+            });
+            const worstCarriersCtx = document.getElementById('worstCarriersChart').getContext('2d');
+            worstCarriersChartInstance = new Chart(worstCarriersCtx, {
+                type: 'bar', data: { labels: worstCarriers.map(item => item[0]), datasets: [ { label: 'Valore (€)', data: worstCarriers.map(item => item[1].totalValue), backgroundColor: 'rgba(255, 112, 67, 0.6)', borderColor: 'rgba(255, 112, 67, 1)', yAxisID: 'y' }, { label: 'N. Consegne', data: worstCarriers.map(item => item[1].deliveryCount), backgroundColor: 'rgba(255, 158, 128, 0.6)', borderColor: 'rgba(255, 158, 128, 1)', yAxisID: 'y1' } ] },
+                options: { responsive: true, plugins: { title: { display: true, text: 'Vettori per Performance', font: { size: 16 } } }, scales: { y: { position: 'left', beginAtZero: true, ticks: { callback: value => value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' }) } }, y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { precision: 0 } } } }
+            });
+            const worstProvincesCtx = document.getElementById('worstProvincesChart').getContext('2d');
+            worstProvincesChartInstance = new Chart(worstProvincesCtx, {
+                type: 'bar', data: { labels: worstProvinces.map(item => item[0]), datasets: [{ label: 'Numero Consegne', data: worstProvinces.map(item => item[1]), backgroundColor: 'rgba(255, 112, 67, 0.6)', borderColor: 'rgba(255, 112, 67, 1)', borderWidth: 1 }] },
+                options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Province per N. Consegne', font: { size: 16 } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
             });
         }
     </script>
 </body>
 </html>
+
 
